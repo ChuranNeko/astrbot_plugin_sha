@@ -7,9 +7,8 @@
 - **显示内容**: 完整 SHA、提交信息首行、作者、日期
 
 ## 安装
-1. 将本插件目录放入 `AstrBot/data/plugins/astrbot_plugin_sha`。
-2. 确保依赖安装（AstrBot 会处理插件依赖）：`requirements.txt` 包含 `aiohttp`。
-3. 在 AstrBot WebUI 的“插件管理”中启用本插件。
+
+复制本仓库链接安装
 
 ## 配置（WebUI 可视化）
 本插件支持在 WebUI 中修改配置，Schema 位于 `_conf_schema.json`：
