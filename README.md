@@ -2,7 +2,7 @@
 
 获取任意 GitHub 仓库指定分支最近 N 次提交的完整 SHA，并发送到会话中。
 
-- **触发指令**: `/sha`（需严格匹配，仅此一个词）
+- **触发指令**: `/sha`
 - **默认仓库**: `AstrBotDevs/AstrBot`（未配置时会提示可在 WebUI 修改）
 - **显示内容**: 完整 SHA、提交信息首行、作者、日期
 
@@ -10,7 +10,7 @@
 
 复制本仓库链接安装
 
-## 配置（WebUI 可视化）
+## 配置
 本插件支持在 WebUI 中修改配置，Schema 位于 `_conf_schema.json`：
 
 - `github_repo` (string): 仓库地址，格式 `owner/repo`，示例 `microsoft/vscode`。默认 `AstrBotDevs/AstrBot`。
