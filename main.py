@@ -2,6 +2,8 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
 import aiohttp
+import ssl
+import certifi
 
 
 @register(
@@ -37,8 +39,12 @@ class GitHubShaPlugin(Star):
 
             logger.info(f"开始获取 {github_repo} 仓库的提交SHA...")
 
+            # SSL: 使用 certifi CA，避免服务器缺少系统根证书导致的校验失败
+            ssl_ctx = ssl.create_default_context(cafile=certifi.where())
+
             # 从GitHub API获取指定数量的提交
-            async with aiohttp.ClientSession() as session:
+            connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+            async with aiohttp.ClientSession(connector=connector) as session:
                 params = {"sha": branch, "per_page": commit_count}
 
                 async with session.get(github_api_url, params=params) as response:
