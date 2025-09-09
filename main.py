@@ -15,35 +15,33 @@ class GitHubShaPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
-        # 从配置获取仓库信息
-        self.github_repo = self.config.get("github_repo", "AstrBotDevs/AstrBot")
-        self.branch = self.config.get("branch", "master")
-        self.commit_count = self.config.get("commit_count", 5)
-        self.github_api_url = f"https://api.github.com/repos/{self.github_repo}/commits"
 
     @filter.command("sha")
     async def get_github_sha(self, event: AstrMessageEvent):
         """获取GitHub仓库指定分支的最新提交SHA"""
         try:
+            # 每次调用时读取最新配置
+            github_repo = self.config.get("github_repo", "AstrBotDevs/AstrBot")
+            branch = self.config.get("branch", "master")
+            commit_count = self.config.get("commit_count", 5)
+            github_api_url = f"https://api.github.com/repos/{github_repo}/commits"
+
             # 检查是否使用默认配置，如果是则提醒用户
-            if self.github_repo == "AstrBotDevs/AstrBot":
+            if github_repo == "AstrBotDevs/AstrBot":
                 reminder_msg = (
-                    f"📌 当前使用默认仓库: {self.github_repo}\n"
+                    f"📌 当前使用默认仓库: {github_repo}\n"
                     "💡 提示: 可在插件管理页面配置其他GitHub仓库地址\n"
                     "格式: owner/repo (例如: microsoft/vscode)\n\n"
                 )
                 yield event.plain_result(reminder_msg)
 
-            logger.info(f"开始获取 {self.github_repo} 仓库的提交SHA...")
+            logger.info(f"开始获取 {github_repo} 仓库的提交SHA...")
 
             # 从GitHub API获取指定数量的提交
             async with aiohttp.ClientSession() as session:
-                params = {
-                    "sha": self.branch,  # 使用配置的分支
-                    "per_page": self.commit_count,  # 使用配置的提交数量
-                }
+                params = {"sha": branch, "per_page": commit_count}
 
-                async with session.get(self.github_api_url, params=params) as response:
+                async with session.get(github_api_url, params=params) as response:
                     if response.status == 200:
                         commits = await response.json()
 
@@ -53,7 +51,7 @@ class GitHubShaPlugin(Star):
 
                         # 构建回复消息
                         result_lines = [
-                            f"🔍 {self.github_repo} 仓库 ({self.branch} 分支) 最后{self.commit_count}次提交 SHA：\n"
+                            f"🔍 {github_repo} 仓库 ({branch} 分支) 最后{commit_count}次提交 SHA：\n"
                         ]
 
                         for i, commit in enumerate(commits, 1):
@@ -72,7 +70,7 @@ class GitHubShaPlugin(Star):
                         result_text = "\n".join(result_lines)
                         yield event.plain_result(result_text)
 
-                        logger.info(f"成功获取 {self.github_repo} 的GitHub提交SHA")
+                        logger.info(f"成功获取 {github_repo} 的GitHub提交SHA")
 
                     else:
                         error_msg = f"GitHub API 请求失败，状态码: {response.status}"
