@@ -1,0 +1,21 @@
+{
+  "github_repo": {
+    "description": "GitHub仓库地址",
+    "type": "string",
+    "hint": "格式: owner/repo，例如: AstrBotDevs/AstrBot",
+    "default": "AstrBotDevs/AstrBot",
+    "obvious_hint": true
+  },
+  "branch": {
+    "description": "分支名称",
+    "type": "string",
+    "hint": "要获取提交记录的分支名称，例如: master, main",
+    "default": "master"
+  },
+  "commit_count": {
+    "description": "获取提交数量",
+    "type": "int",
+    "hint": "要获取的最新提交记录数量，建议1-10之间",
+    "default": 5
+  }
+}
