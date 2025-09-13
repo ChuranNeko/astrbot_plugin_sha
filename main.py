@@ -259,7 +259,7 @@ class GitHubShaPlugin(Star):
                 f"admin_ids_len={len(admin_ids)}, is_admin={is_admin}"
             )
             if not is_admin:
-                yield event.plain_result("我不是本群管理员，无法审阅加群")
+                yield event.plain_result("我不是本群管理员，无法审阅加群申请")
                 return
 
             # 获取最近提交的 SHA 列表
@@ -326,7 +326,7 @@ class GitHubShaPlugin(Star):
                         sub_type=sub_type,
                         approve=matched,
                         reason=(
-                            f"SHA匹配: {matched_prefix}" if matched and matched_prefix else "未匹配到有效 SHA"
+                            f"SHA匹配: {matched_prefix}" if matched and matched_prefix else "未匹配到有效 SHA，再仔细检查一下吧"
                         ),
                     )
                     if matched:
