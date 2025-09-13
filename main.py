@@ -10,13 +10,23 @@ import certifi
     "astrbot_plugin_sha",
     "IGCrystal",
     "获取GitHub仓库最后5次提交SHA的插件",
-    "1.0.0",
+    "1.0.1",
     "https://github.com/IGCrystal-NEO/astrbot_plugin_sha",
 )
 class GitHubShaPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
+
+    @filter.regex(r"(?i)^sha$")
+    async def on_sha_keyword(self, event: AstrMessageEvent):
+        """全局监听：消息中包含 'sha' 时触发（不依赖唤醒前缀）"""
+        # 避免与指令重复（如 /sha），若是以指令形式，则交给指令处理
+        msg = (event.message_str or "").strip()
+        if msg.startswith("/"):
+            return
+        async for res in self.get_github_sha(event):
+            yield res
 
     @filter.command("sha")
     async def get_github_sha(self, event: AstrMessageEvent):
