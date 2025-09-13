@@ -150,7 +150,7 @@ class GitHubShaPlugin(Star):
                 )
                 yield event.plain_result(reminder_msg)
 
-            logger.info(f"开始获取 {github_repo} 仓库的提交SHA...")
+            logger.debug(f"开始获取 {github_repo} 仓库的提交SHA...")
 
             # SSL: 使用 certifi CA，避免服务器缺少系统根证书导致的校验失败
             ssl_ctx = ssl.create_default_context(cafile=certifi.where())
