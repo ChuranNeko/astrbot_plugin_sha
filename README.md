@@ -1,10 +1,11 @@
 # astrbot_plugin_sha
 
-获取任意 GitHub 仓库指定分支最近 N 次提交的完整 SHA，并发送到会话中。
+获取任意 GitHub 仓库指定分支最近 N 次提交的完整 SHA，并支持按 SHA 前缀自动“审阅加群”。
 
-- **触发指令**: `/sha`
-- **默认仓库**: `AstrBotDevs/AstrBot`（未配置时会提示可在 WebUI 修改）
-- **显示内容**: 完整 SHA、提交信息首行、作者、日期
+- **触发指令**
+  - `/sha`：显示最近 N 次提交（完整 SHA、提交信息首行、作者、日期）
+  - `/审阅加群`：在 QQ OneBot 群聊中自动审批入群请求（需机器人为群管/群主）
+- **默认仓库**：`AstrBotDevs/AstrBot`（未配置时会提示可在 WebUI 修改）
 
 ## 安装
 
@@ -13,19 +14,39 @@
 ## 配置
 本插件支持在 WebUI 中修改配置，Schema 位于 `_conf_schema.json`：
 
-- `github_repo` (string): 仓库地址，格式 `owner/repo`，示例 `microsoft/vscode`。默认 `AstrBotDevs/AstrBot`。
-- `branch` (string): 分支名，示例 `master`、`main`，默认 `master`。
-- `commit_count` (int): 拉取的提交数量，默认 `5`（建议 1-10）。
+- `github_repo` (string)：仓库地址，格式 `owner/repo`，示例 `microsoft/vscode`。默认 `AstrBotDevs/AstrBot`。
+- `branch` (string)：分支名，示例 `master`、`main`，默认 `master`。
+- `commit_count` (int)：拉取的提交数量，默认 `5`（建议 1-10）。
 
-说明：若保持默认仓库，触发指令时会先在会话中提示“可在插件管理页面配置仓库”。
+说明：若保持默认仓库，触发 `/sha` 时会先在会话中提示“可在插件管理页面配置仓库”。
 
 ## 使用
-- 在任意支持的平台发送：`/sha`
-- 机器人将返回配置的仓库、分支下最近 N 条提交，包含：
-  - 完整 40 位 SHA
-  - 提交信息首行
-  - 作者与日期（UTC 日期的前 10 位）
+
+- 获取提交：在任意支持的平台发送 `/sha`
+  - 返回配置仓库/分支下最近 N 条提交，包含完整 40 位 SHA、首行提交信息、作者与日期（UTC 日期前 10 位）
+
+- 审阅加群：在 QQ OneBot 群聊发送 `/审阅加群`
+  - 仅当机器人是该群管理员或群主时生效
+  - 插件会读取最近提交列表，并将入群验证信息中的 SHA 前缀（至少 7 位，大小写不敏感）与之匹配
+  - 命中则批准，未命中则拒绝
+  - 若安装了 QQAdmin 插件，且申请人在其黑名单（`reject_ids`）中，则直接跳过不审阅
+  - 本功能仅使用机器人实时收到的“入群请求事件”缓存，文件位置：`data/plugin_data/astrbot_plugin_sha/pending_group_requests.json`
+    - 请确保机器人在线并能收到 OneBot 的 `post_type=request, request_type=group` 事件，插件才能缓存并处理
 
 ## 注意事项
-- GitHub API 匿名访问存在速率限制；在高频使用场景请注意控制调用频率或配置网络代理。
-- 部分平台对消息长度有上限，若 `commit_count` 过大可能导致消息过长。
+
+- 仅 OneBot(aiocqhttp) 群聊支持“审阅加群”
+- 需机器人在目标群具备管理员或群主权限
+- GitHub API 匿名访问存在速率限制；在高频使用场景请注意调用频率或使用代理
+- 部分平台对消息长度有上限，`commit_count` 过大可能导致消息过长
+
+## FAQ
+
+- 执行 `/审阅加群` 显示“没有待审的加群申请”
+  - 机器人近期是否收到过入群请求事件？本插件仅处理缓存到的请求
+  - 是否为 OneBot(qq) 群聊，并连接正常？
+  - 机器人是否为该群管理员/群主？
+- 验证信息命中不了 SHA
+  - 请确认验证消息中的 SHA 前缀长度 ≥ 7
+  - 确认仓库与分支配置正确，且 `/sha` 能正常返回提交
+  - GitHub API 限频可能导致拉取失败，请稍后重试
