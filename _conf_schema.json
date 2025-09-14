@@ -17,5 +17,12 @@
     "type": "int",
     "hint": "要获取的最新提交记录数量，建议1-10之间",
     "default": 5
+  },
+  "auto_review_on_request": {
+    "description": "收到入群请求时自动审阅",
+    "type": "bool",
+    "hint": "开启后，机器人在收到入群请求事件时将自动匹配 SHA 并审批",
+    "default": true,
+    "obvious_hint": true
   }
 }

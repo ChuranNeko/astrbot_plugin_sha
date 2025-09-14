@@ -19,7 +19,7 @@ from astrbot.api.star import StarTools
     "astrbot_plugin_sha",
     "IGCrystal",
     "获取GitHub仓库最后5次提交SHA的插件",
-    "1.2.0",
+    "1.3.0",
     "https://github.com/IGCrystal-NEO/astrbot_plugin_sha",
 )
 class GitHubShaPlugin(Star):
@@ -326,7 +326,7 @@ class GitHubShaPlugin(Star):
                         sub_type=sub_type,
                         approve=matched,
                         reason=(
-                            f"SHA匹配: {matched_prefix}" if matched and matched_prefix else "未匹配到有效 SHA，再仔细检查一下吧"
+                            f"SHA匹配: {matched_prefix}" if matched and matched_prefix else "SHA不正确呢，再仔细检查一下吧"
                         ),
                     )
                     if matched:
@@ -375,6 +375,58 @@ class GitHubShaPlugin(Star):
                 logger.debug(
                     f"[审阅加群] 缓存请求: group_id={group_id}, user_id={user_id}, sub_type={sub_type}, flag_len={len(str(flag))}"
                 )
+
+                # 自动审阅（可配置开关）
+                if bool(self.config.get("auto_review_on_request", True)):
+                    try:
+                        # 管理员/群主校验
+                        group = await event.get_group(group_id=str(group_id))
+                        if not self._is_group_admin(event, group):
+                            logger.debug(
+                                f"[审阅加群] auto-skip (not admin) group_id={group_id}, user_id={user_id}"
+                            )
+                            return
+                        # 黑名单跳过
+                        if self._is_blacklisted(str(group_id), str(user_id)):
+                            logger.debug(
+                                f"[审阅加群] auto-skip (blacklist) group_id={group_id}, user_id={user_id}"
+                            )
+                            return
+
+                        # 拉取最近提交并匹配 SHA 前缀
+                        recent_shas = [s.lower() for s in await self._fetch_recent_commit_shas()]
+                        sha_candidates = self._extract_sha_candidates(str(comment))
+                        matched = False
+                        matched_prefix = None
+                        for cand in sha_candidates:
+                            if len(cand) >= 7 and any(s.startswith(cand) for s in recent_shas):
+                                matched = True
+                                matched_prefix = cand
+                                break
+
+                        await event.bot.set_group_add_request(
+                            flag=str(flag),
+                            sub_type=sub_type,
+                            approve=matched,
+                            reason=(
+                                f"SHA匹配: {matched_prefix}"
+                                if matched and matched_prefix
+                                else "不对哦，再好好想想吧"
+                            ),
+                        )
+
+                        # 成功处理后移除缓存
+                        gid = str(group_id)
+                        uid = str(user_id)
+                        if gid in self._pending_cache and uid in self._pending_cache[gid]:
+                            del self._pending_cache[gid][uid]
+                            self._save_pending_cache()
+
+                        logger.debug(
+                            f"[审阅加群] auto-processed approve={matched} group_id={group_id}, user_id={user_id}, cand={matched_prefix}"
+                        )
+                    except Exception as e:
+                        logger.error(f"[审阅加群] auto-review 异常: {e}")
         except Exception as e:
             logger.error(f"[审阅加群] capture_group_add_requests 异常: {e}")
 

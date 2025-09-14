@@ -17,6 +17,7 @@
 - `github_repo` (string)：仓库地址，格式 `owner/repo`，示例 `microsoft/vscode`。默认 `AstrBotDevs/AstrBot`。
 - `branch` (string)：分支名，示例 `master`、`main`，默认 `master`。
 - `commit_count` (int)：拉取的提交数量，默认 `5`（建议 1-10）。
+- `auto_review_on_request` (bool)：收到入群请求时自动审阅，默认 `true`。
 
 说明：若保持默认仓库，触发 `/sha` 时会先在会话中提示“可在插件管理页面配置仓库”。
 
