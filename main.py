@@ -1,6 +1,3 @@
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
-from astrbot.api import logger, AstrBotConfig
 import aiohttp
 import ssl
 import certifi
@@ -8,18 +5,22 @@ import re
 import os
 import json
 import time
+import random
+
+from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.star import Context, Star, register, StarTools
+from astrbot.api import logger, AstrBotConfig
 from typing import List, Dict, Any
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
-from astrbot.api.star import StarTools
 
 
 @register(
     "astrbot_plugin_sha",
     "IGCrystal",
     "获取GitHub仓库最后5次提交SHA的插件",
-    "1.3.0",
+    "1.3.5",
     "https://github.com/IGCrystal-NEO/astrbot_plugin_sha",
 )
 class GitHubShaPlugin(Star):
@@ -123,6 +124,87 @@ class GitHubShaPlugin(Star):
         if skipped_blacklist:
             prefix += f"，跳过 {skipped_blacklist} 项（黑名单）"
         return prefix + ("\n" + "\n".join(details) if details else "")
+
+    async def _review_request_core(
+        self,
+        event: AiocqhttpMessageEvent,
+        group_id: str,
+        user_id: str | None,
+        flag: str | None,
+        sub_type: str,
+        comment: str,
+        recent_shas: List[str],
+    ) -> Dict[str, Any]:
+        """统一的单条请求审阅流程，供自动/手动复用。
+
+        返回：
+          {
+            'outcome': 'approved'|'rejected'|'no_flag'|'skipped_blacklist'|'error',
+            'matched_prefix': str|None,
+            'message': str  # 可用于输出的明细行（部分 outcome 可能为空）
+          }
+        """
+        # 黑名单跳过
+        if user_id and self._is_blacklisted(group_id, user_id):
+            return {"outcome": "skipped_blacklist", "matched_prefix": None, "message": ""}
+
+        # 缺少 flag 无法处理
+        if not flag:
+            return {
+                "outcome": "no_flag",
+                "matched_prefix": None,
+                "message": f"{user_id}: 申请缺少凭据，无法处理",
+            }
+
+        # 匹配 SHA 前缀
+        sha_candidates = self._extract_sha_candidates(comment)
+        matched, matched_prefix = self._match_sha_prefixes(sha_candidates, recent_shas)
+
+        try:
+            reject_no_sha_msgs = [
+                "不对哦，再好好想想吧～",
+                "还差点意思呢，再试试呢～",
+                "没看到像提交号的东西呢，检查一下再来叭～",
+            ]
+            reject_mismatch_msgs = [
+                "看起来不是最新提交的呢，再核对一下吧～",
+                "好像对不上最新提交耶，确认下再试～",
+            ]
+
+            # QQ 端不会展示“通过理由”，仅在拒绝时填写人性化理由
+            if matched and matched_prefix:
+                reason_text = ""
+            else:
+                reason_text = (
+                    random.choice(reject_no_sha_msgs)
+                    if not sha_candidates
+                    else random.choice(reject_mismatch_msgs)
+                )
+
+            await event.bot.set_group_add_request(
+                flag=str(flag),
+                sub_type=sub_type or "add",
+                approve=matched,
+                reason=reason_text,
+            )
+            if matched:
+                return {
+                    "outcome": "approved",
+                    "matched_prefix": matched_prefix,
+                    "message": f"{user_id}: 已批准 (匹配 {matched_prefix})",
+                }
+            return {
+                "outcome": "rejected",
+                "matched_prefix": matched_prefix,
+                "message": f"{user_id}: 已拒绝 (未匹配)",
+            }
+        except Exception as e:
+            logger.error(f"处理申请失败 user={user_id}, flag={flag}: {e}")
+            return {
+                "outcome": "error",
+                "matched_prefix": matched_prefix,
+                "message": f"{user_id}: 处理失败",
+            }
 
     @filter.regex(r"(?i)^sha$")
     async def on_sha_keyword(self, event: AstrMessageEvent):
@@ -290,57 +372,36 @@ class GitHubShaPlugin(Star):
             skipped_blacklist = 0
 
             for user_id, info in pending_map.items():
-                # 黑名单直接跳过不审阅
-                if self._is_blacklisted(grp_id, user_id):
-                    skipped_blacklist += 1
-                    logger.debug(f"[审阅加群] skip user={user_id} by blacklist for group={grp_id}")
-                    continue
                 flag = info.get("flag")
-                sub_type = info.get("sub_type") or "add"
+                sub_type = (info.get("sub_type") or "add").strip()
                 comment = info.get("comment") or ""
 
-                sha_candidates = self._extract_sha_candidates(comment)
-                logger.debug(
-                    f"[审阅加群] user={user_id}, flag_present={bool(flag)}, sha_candidates={sha_candidates}"
+                outcome = await self._review_request_core(
+                    event=event,
+                    group_id=grp_id,
+                    user_id=str(user_id),
+                    flag=str(flag) if flag else None,
+                    sub_type=sub_type,
+                    comment=str(comment),
+                    recent_shas=recent_shas,
                 )
 
-                matched = False
-                matched_prefix = None
-                if sha_candidates:
-                    for cand in sha_candidates:
-                        if len(cand) >= 7 and any(s.startswith(cand) for s in recent_shas):
-                            matched = True
-                            matched_prefix = cand
-                            break
-                logger.debug(
-                    f"[审阅加群] user={user_id}, matched={matched}, matched_prefix={matched_prefix}"
-                )
-
-                if not flag:
-                    results.append(f"{user_id}: 申请缺少凭据，无法处理")
-                    continue
-
-                try:
-                    await event.bot.set_group_add_request(
-                        flag=flag,
-                        sub_type=sub_type,
-                        approve=matched,
-                        reason=(
-                            f"SHA匹配: {matched_prefix}" if matched and matched_prefix else "SHA不正确呢，再仔细检查一下吧"
-                        ),
+                if outcome["outcome"] == "skipped_blacklist":
+                    skipped_blacklist += 1
+                    logger.debug(
+                        f"[审阅加群] skip user={user_id} by blacklist for group={grp_id}"
                     )
-                    if matched:
-                        approved += 1
-                        results.append(f"{user_id}: 已批准 (匹配 {matched_prefix})")
-                    else:
-                        rejected += 1
-                        results.append(f"{user_id}: 已拒绝 (未匹配)")
-                    # 成功后移除缓存
+                    continue
+                if outcome["message"]:
+                    results.append(outcome["message"])
+                if outcome["outcome"] == "approved":
+                    approved += 1
+                elif outcome["outcome"] == "rejected":
+                    rejected += 1
+
+                if outcome["outcome"] in {"approved", "rejected"}:
                     if grp_id in self._pending_cache and user_id in self._pending_cache[grp_id]:
                         del self._pending_cache[grp_id][user_id]
-                except Exception as e:
-                    logger.error(f"处理申请失败 user={user_id}: {e}")
-                    results.append(f"{user_id}: 处理失败")
 
             # 保存缓存变更
             try:
@@ -393,26 +454,16 @@ class GitHubShaPlugin(Star):
                             )
                             return
 
-                        # 拉取最近提交并匹配 SHA 前缀
+                        # 统一走核心流程
                         recent_shas = [s.lower() for s in await self._fetch_recent_commit_shas()]
-                        sha_candidates = self._extract_sha_candidates(str(comment))
-                        matched = False
-                        matched_prefix = None
-                        for cand in sha_candidates:
-                            if len(cand) >= 7 and any(s.startswith(cand) for s in recent_shas):
-                                matched = True
-                                matched_prefix = cand
-                                break
-
-                        await event.bot.set_group_add_request(
+                        outcome = await self._review_request_core(
+                            event=event,
+                            group_id=str(group_id),
+                            user_id=str(user_id),
                             flag=str(flag),
                             sub_type=sub_type,
-                            approve=matched,
-                            reason=(
-                                f"SHA匹配: {matched_prefix}"
-                                if matched and matched_prefix
-                                else "不对哦，再好好想想吧"
-                            ),
+                            comment=str(comment),
+                            recent_shas=recent_shas,
                         )
 
                         # 成功处理后移除缓存
@@ -422,9 +473,7 @@ class GitHubShaPlugin(Star):
                             del self._pending_cache[gid][uid]
                             self._save_pending_cache()
 
-                        logger.debug(
-                            f"[审阅加群] auto-processed approve={matched} group_id={group_id}, user_id={user_id}, cand={matched_prefix}"
-                        )
+                        logger.debug(f"[审阅加群] auto-processed outcome={outcome['outcome']} group_id={group_id}, user_id={user_id}")
                     except Exception as e:
                         logger.error(f"[审阅加群] auto-review 异常: {e}")
         except Exception as e:
