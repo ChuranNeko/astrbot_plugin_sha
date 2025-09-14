@@ -6,11 +6,11 @@ import os
 import json
 import time
 import random
+from typing import List, Dict, Any
 
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api import logger, AstrBotConfig
-from typing import List, Dict, Any
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
