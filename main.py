@@ -23,11 +23,11 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     "1.3.5",
     "https://github.com/IGCrystal-NEO/astrbot_plugin_sha",
 )
+
 class GitHubShaPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
-        # 待审缓存：{ group_id: { user_id: {flag, sub_type, comment, ts} } }
         self._pending_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self._data_dir = str(StarTools.get_data_dir("astrbot_plugin_sha"))
         self._pending_path = os.path.join(self._data_dir, "pending_group_requests.json")
@@ -57,7 +57,7 @@ class GitHubShaPlugin(Star):
             "comment": comment or "",
             "ts": int(time.time()),
         }
-        # 清理超过48小时的条目
+
         expire_before = int(time.time()) - 48 * 3600
         for gid in list(self._pending_cache.keys()):
             for uid in list(self._pending_cache[gid].keys()):
@@ -90,7 +90,6 @@ class GitHubShaPlugin(Star):
         group_list = reject_ids.get(str(group_id), []) or []
         return str(user_id) in {str(x) for x in group_list}
 
-    # ===== Helper methods for reuse =====
     def _get_repo_cfg(self) -> tuple[str, str, int]:
         github_repo = self.config.get("github_repo", "AstrBotDevs/AstrBot")
         branch = self.config.get("branch", "master")
@@ -135,7 +134,8 @@ class GitHubShaPlugin(Star):
         comment: str,
         recent_shas: List[str],
     ) -> Dict[str, Any]:
-        """统一的单条请求审阅流程，供自动/手动复用。
+        """
+        统一的单条请求审阅流程，供自动/手动复用。
 
         返回：
           {
@@ -144,11 +144,10 @@ class GitHubShaPlugin(Star):
             'message': str  # 可用于输出的明细行（部分 outcome 可能为空）
           }
         """
-        # 黑名单跳过
+
         if user_id and self._is_blacklisted(group_id, user_id):
             return {"outcome": "skipped_blacklist", "matched_prefix": None, "message": ""}
 
-        # 缺少 flag 无法处理
         if not flag:
             return {
                 "outcome": "no_flag",
@@ -156,7 +155,6 @@ class GitHubShaPlugin(Star):
                 "message": f"{user_id}: 申请缺少凭据，无法处理",
             }
 
-        # 匹配 SHA 前缀
         sha_candidates = self._extract_sha_candidates(comment)
         matched, matched_prefix = self._match_sha_prefixes(sha_candidates, recent_shas)
 
@@ -171,7 +169,6 @@ class GitHubShaPlugin(Star):
                 "好像对不上最新提交耶，确认下再试～",
             ]
 
-            # QQ 端不会展示“通过理由”，仅在拒绝时填写人性化理由
             if matched and matched_prefix:
                 reason_text = ""
             else:
@@ -206,10 +203,9 @@ class GitHubShaPlugin(Star):
                 "message": f"{user_id}: 处理失败",
             }
 
-    @filter.regex(r"(?i)^sha$")
+    @filter.regex(r"(?i)^/sha$")
     async def on_sha_keyword(self, event: AstrMessageEvent):
         """全局监听：消息中包含 'sha' 时触发（不依赖唤醒前缀）"""
-        # 避免与指令重复（如 /sha），若是以指令形式，则交给指令处理
         msg = (event.message_str or "").strip()
         if msg.startswith("/"):
             return
@@ -223,7 +219,6 @@ class GitHubShaPlugin(Star):
             github_repo, branch, commit_count = self._get_repo_cfg()
             github_api_url = f"https://api.github.com/repos/{github_repo}/commits"
 
-            # 检查是否使用默认配置，如果是则提醒用户
             if github_repo == "AstrBotDevs/AstrBot":
                 reminder_msg = (
                     f"📌 当前使用默认仓库: {github_repo}\n"
@@ -234,10 +229,8 @@ class GitHubShaPlugin(Star):
 
             logger.debug(f"开始获取 {github_repo} 仓库的提交SHA...")
 
-            # SSL: 使用 certifi CA，避免服务器缺少系统根证书导致的校验失败
             ssl_ctx = ssl.create_default_context(cafile=certifi.where())
 
-            # 从GitHub API获取指定数量的提交
             connector = aiohttp.TCPConnector(ssl=ssl_ctx)
             async with aiohttp.ClientSession(connector=connector) as session:
                 params = {"sha": branch, "per_page": commit_count}
@@ -250,7 +243,6 @@ class GitHubShaPlugin(Star):
                             yield event.plain_result("❌ 未找到任何提交记录")
                             return
 
-                        # 构建回复消息
                         result_lines = [
                             f"🔍 {github_repo} 仓库 ({branch} 分支) 最后{commit_count}次提交 SHA：\n"
                         ]
@@ -313,7 +305,7 @@ class GitHubShaPlugin(Star):
         if not text:
             return []
         candidates = re.findall(r"\b[a-fA-F0-9]{7,40}\b", text)
-        # 统一小写，去重
+
         dedup = []
         for c in candidates:
             c = c.lower()
@@ -344,7 +336,6 @@ class GitHubShaPlugin(Star):
                 yield event.plain_result("我不是本群管理员，无法审阅加群申请")
                 return
 
-            # 获取最近提交的 SHA 列表
             try:
                 recent_shas = [s.lower() for s in await self._fetch_recent_commit_shas()]
                 logger.debug(
@@ -355,7 +346,6 @@ class GitHubShaPlugin(Star):
                 yield event.plain_result("获取仓库提交列表失败，请稍后重试")
                 return
 
-            # 仅从缓存读取待审请求（参考 QQAdmin 事件流）
             grp_id = str(event.get_group_id())
             pending_map: Dict[str, Dict[str, Any]] = dict(self._pending_cache.get(grp_id, {}))
             logger.debug(
@@ -403,7 +393,6 @@ class GitHubShaPlugin(Star):
                     if grp_id in self._pending_cache and user_id in self._pending_cache[grp_id]:
                         del self._pending_cache[grp_id][user_id]
 
-            # 保存缓存变更
             try:
                 self._save_pending_cache()
             except Exception:
@@ -437,24 +426,22 @@ class GitHubShaPlugin(Star):
                     f"[审阅加群] 缓存请求: group_id={group_id}, user_id={user_id}, sub_type={sub_type}, flag_len={len(str(flag))}"
                 )
 
-                # 自动审阅（可配置开关）
                 if bool(self.config.get("auto_review_on_request", True)):
                     try:
-                        # 管理员/群主校验
+
                         group = await event.get_group(group_id=str(group_id))
                         if not self._is_group_admin(event, group):
                             logger.debug(
                                 f"[审阅加群] auto-skip (not admin) group_id={group_id}, user_id={user_id}"
                             )
                             return
-                        # 黑名单跳过
+
                         if self._is_blacklisted(str(group_id), str(user_id)):
                             logger.debug(
                                 f"[审阅加群] auto-skip (blacklist) group_id={group_id}, user_id={user_id}"
                             )
                             return
 
-                        # 统一走核心流程
                         recent_shas = [s.lower() for s in await self._fetch_recent_commit_shas()]
                         outcome = await self._review_request_core(
                             event=event,
@@ -466,12 +453,31 @@ class GitHubShaPlugin(Star):
                             recent_shas=recent_shas,
                         )
 
-                        # 成功处理后移除缓存
                         gid = str(group_id)
                         uid = str(user_id)
                         if gid in self._pending_cache and uid in self._pending_cache[gid]:
                             del self._pending_cache[gid][uid]
                             self._save_pending_cache()
+
+                        try:
+                            if outcome["outcome"] in {"approved", "rejected"}:
+                                if outcome["outcome"] == "approved":
+                                    matched = outcome.get("matched_prefix") or ""
+                                    notice = (
+                                        f"审阅结果：已通过用户 {user_id} 的加群申请"
+                                        + (f"（匹配提交 {matched[:7]}）" if matched else "")
+                                        + "，欢迎加入！"
+                                    )
+                                else:
+                                    notice = (
+                                        f"审阅结果：已拒绝用户 {user_id} 的加群申请"
+                                    )
+                                avatar_url = f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=100"
+                                message_with_avatar = f"[CQ:image,file={avatar_url}]\n{notice}"
+                                await event.bot.send_group_msg(group_id=gid, message=message_with_avatar)
+                                
+                        except Exception as e:
+                            logger.error(f"[审阅加群] 发送群内通知失败 group_id={group_id}, user_id={user_id}: {e}")
 
                         logger.debug(f"[审阅加群] auto-processed outcome={outcome['outcome']} group_id={group_id}, user_id={user_id}")
                     except Exception as e:
