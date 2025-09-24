@@ -20,7 +20,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     "astrbot_plugin_sha",
     "IGCrystal",
     "获取GitHub仓库最后5次提交SHA的插件",
-    "1.3.5",
+    "1.3.6",
     "https://github.com/IGCrystal-NEO/astrbot_plugin_sha",
 )
 
