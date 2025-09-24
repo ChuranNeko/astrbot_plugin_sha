@@ -203,7 +203,7 @@ class GitHubShaPlugin(Star):
                 "message": f"{user_id}: 处理失败",
             }
 
-    @filter.regex(r"(?i)^/sha$")
+    @filter.regex(r"(?i)^sha$")
     async def on_sha_keyword(self, event: AstrMessageEvent):
         """全局监听：消息中包含 'sha' 时触发（不依赖唤醒前缀）"""
         msg = (event.message_str or "").strip()
