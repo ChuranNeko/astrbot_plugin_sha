@@ -70,12 +70,12 @@ class GitHubShaPlugin(Star):
     def _get_cached_request(self, group_id: str, user_id: str) -> Dict[str, Any] | None:
         return self._pending_cache.get(str(group_id), {}).get(str(user_id))
 
-    def _qqadmin_group_join_data_path(self) -> str:
-        return os.path.join(str(StarTools.get_data_dir("astrbot_plugin_QQAdmin")), "group_join_data.json")
+    def _group_join_data_path(self) -> str:
+        return os.path.join(str(StarTools.get_data_dir("astrbot_plugin_sha")), "group_join_data.json")
 
     def _load_group_join_blacklist(self) -> Dict[str, Any]:
         try:
-            path = self._qqadmin_group_join_data_path()
+            path = self._group_join_data_path()
             if os.path.exists(path):
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
@@ -203,15 +203,6 @@ class GitHubShaPlugin(Star):
                 "message": f"{user_id}: 处理失败",
             }
 
-    @filter.regex(r"(?i)^sha$")
-    async def on_sha_keyword(self, event: AstrMessageEvent):
-        """全局监听：消息中包含 'sha' 时触发（不依赖唤醒前缀）"""
-        msg = (event.message_str or "").strip()
-        if msg.startswith("/"):
-            return
-        async for res in self.get_github_sha(event):
-            yield res
-
     @filter.command("sha")
     async def get_github_sha(self, event: AstrMessageEvent):
         """获取GitHub仓库指定分支的最新提交SHA"""
@@ -223,7 +214,7 @@ class GitHubShaPlugin(Star):
                 reminder_msg = (
                     f"📌 当前使用默认仓库: {github_repo}\n"
                     "💡 提示: 可在插件管理页面配置其他GitHub仓库地址\n"
-                    "格式: owner/repo (例如: microsoft/vscode)\n\n"
+                    "格式: owner/repo (例如: microsoft/vscode)"
                 )
                 yield event.plain_result(reminder_msg)
 
@@ -406,7 +397,7 @@ class GitHubShaPlugin(Star):
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @filter.event_message_type(filter.EventMessageType.ALL, priority=1)
     async def capture_group_add_requests(self, event: AiocqhttpMessageEvent):
-        """参考 QQAdmin：监听 OneBot 请求事件，缓存 flag 以便离线审批。"""
+        """监听 OneBot 请求事件，缓存 flag 以便离线审批。"""
         try:
             raw = getattr(event.message_obj, "raw_message", None)
             if not isinstance(raw, dict):
@@ -475,7 +466,7 @@ class GitHubShaPlugin(Star):
                                 avatar_url = f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=100"
                                 message_with_avatar = f"[CQ:image,file={avatar_url}]\n{notice}"
                                 await event.bot.send_group_msg(group_id=gid, message=message_with_avatar)
-                                
+
                         except Exception as e:
                             logger.error(f"[审阅加群] 发送群内通知失败 group_id={group_id}, user_id={user_id}: {e}")
 
