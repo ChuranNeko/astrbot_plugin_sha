@@ -160,9 +160,9 @@ class GitHubShaPlugin(Star):
 
         try:
             reject_no_sha_msgs = [
-                "不对哦，再好好想想吧～",
-                "还差点意思呢，再试试呢～",
-                "没看到像提交号的东西呢，检查一下再来叭～",
+                "不对哦，再好好想想吧～不知道的话可以去 GitHub 看看哦",
+                "还差点意思呢，去 GitHub 检查一下再来试试吧～",
+                "没看到像提交号的东西呢，去 GitHub 检查一下再来叭～",
             ]
             reject_mismatch_msgs = [
                 "看起来不是最新提交的呢，再核对一下吧～",
@@ -239,14 +239,14 @@ class GitHubShaPlugin(Star):
                         ]
 
                         for i, commit in enumerate(commits, 1):
-                            sha = commit["sha"]  # 显示完整的SHA
+                            sha = commit["sha"]
                             message = commit["commit"]["message"].split("\n")[
                                 0
-                            ]  # 只取第一行提交信息
+                            ]
                             author = commit["commit"]["author"]["name"]
                             date = commit["commit"]["author"]["date"][
                                 :10
-                            ]  # 只取日期部分
+                            ]
 
                             result_lines.append(f"{i}. {sha} - {message}")
                             result_lines.append(f"   作者: {author} | 日期: {date}\n")
