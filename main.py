@@ -203,6 +203,12 @@ class GitHubShaPlugin(Star):
                 "message": f"{user_id}: 处理失败",
             }
 
+    @filter.regex(r"(?i)\bhash\b")
+    async def on_hash_keyword(self, event: AstrMessageEvent):
+        """全局监听：消息包含单词 'hash' 时触发（不依赖唤醒前缀）"""
+        async for res in self.get_github_sha(event):
+            yield res
+
     @filter.command("sha")
     async def get_github_sha(self, event: AstrMessageEvent):
         """获取GitHub仓库指定分支的最新提交SHA"""
@@ -461,7 +467,8 @@ class GitHubShaPlugin(Star):
                                     )
                                 else:
                                     notice = (
-                                        f"审阅结果：已拒绝用户 {user_id} 的加群申请"
+                                        f"审阅结果：已拒绝用户 {user_id} 的加群申请\n"
+                                        f"{(comment or '').strip() or '无'}"
                                     )
                                 avatar_url = f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=100"
                                 message_with_avatar = f"[CQ:image,file={avatar_url}]\n{notice}"
