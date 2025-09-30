@@ -29,11 +29,14 @@
 
 ## 安装
 
-在 AstrBot 插件管理页面使用以下链接安装：
+在 Astrbot 插件商店搜索 `astrbot_plugin_sha` 进行安装(推荐方式)。
+
+或自己 clone 此仓库到 Astrbot 插件目录：
 
 ```
-https://github.com/ChuranNeko/astrbot_plugin_sha
+git clone https://github.com/ChuranNeko/astrbot_plugin_sha /data/plugins
 ```
+
 
 ## 配置
 
