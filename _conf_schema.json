@@ -24,5 +24,24 @@
     "hint": "开启后，机器人在收到入群请求事件时将自动匹配 SHA 并审批",
     "default": true,
     "obvious_hint": true
+  },
+  "enabled_groups": {
+    "description": "启用自动审阅的群聊ID列表",
+    "type": "list",
+    "hint": "需要启用自动审批的群号列表。留空则不处理任何群聊的加群申请。",
+    "default": [],
+    "obvious_hint": true
+  },
+  "max_attempts": {
+    "description": "每日最大错误尝试次数",
+    "type": "int",
+    "hint": "用户每日回答错误次数上限，超过后当天不再处理其申请。设置为0则不限制。",
+    "default": 3
+  },
+  "reset_hour": {
+    "description": "重置错误次数的时刻 (24小时制)",
+    "type": "int",
+    "hint": "每天几点重置所有用户的错误次数计数器。范围 0-23。设置为 -1 则永不重置。",
+    "default": 4
   }
 }

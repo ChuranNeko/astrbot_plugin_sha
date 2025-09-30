@@ -6,6 +6,8 @@ import os
 import json
 import time
 import random
+import asyncio
+from datetime import datetime
 from typing import List, Dict, Any
 
 from astrbot.api.event import filter, AstrMessageEvent
@@ -18,9 +20,9 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 
 @register(
     "astrbot_plugin_sha",
-    "IGCrystal",
+    "ChuranNeko",
     "获取GitHub仓库最后5次提交SHA的插件",
-    "1.3.6",
+    "1.4.1",
     "https://github.com/IGCrystal-NEO/astrbot_plugin_sha",
 )
 
@@ -31,6 +33,10 @@ class GitHubShaPlugin(Star):
         self._pending_cache: Dict[str, Dict[str, Dict[str, Any]]] = {}
         self._data_dir = str(StarTools.get_data_dir("astrbot_plugin_sha"))
         self._pending_path = os.path.join(self._data_dir, "pending_group_requests.json")
+        self._error_count_path = os.path.join(self._data_dir, "error_counts.json")
+        self._error_counts: Dict[str, Dict[str, Dict[str, int]]] = {}
+        self._reset_task: asyncio.Task | None = None
+        self._last_reset_date: str = ""
 
     async def initialize(self):
         try:
@@ -38,6 +44,17 @@ class GitHubShaPlugin(Star):
             if os.path.exists(self._pending_path):
                 with open(self._pending_path, "r", encoding="utf-8") as f:
                     self._pending_cache = json.load(f)
+            
+            # 加载错误次数数据
+            if os.path.exists(self._error_count_path):
+                with open(self._error_count_path, "r", encoding="utf-8") as f:
+                    self._error_counts = json.load(f)
+            
+            # 启动定时重置任务
+            reset_hour = self.config.get("reset_hour", 4)
+            if reset_hour >= 0:
+                self._reset_task = asyncio.create_task(self._reset_scheduler())
+                logger.info(f"[审阅加群] 已启动定时重置任务，重置时间：每日 {reset_hour}:00")
         except Exception as e:
             logger.error(f"[审阅加群] 加载待审缓存失败: {e}")
 
@@ -47,6 +64,101 @@ class GitHubShaPlugin(Star):
                 json.dump(self._pending_cache, f, ensure_ascii=False, indent=2)
         except Exception as e:
             logger.error(f"[审阅加群] 保存待审缓存失败: {e}")
+    
+    def _save_error_counts(self) -> None:
+        """保存错误次数数据到文件"""
+        try:
+            with open(self._error_count_path, "w", encoding="utf-8") as f:
+                json.dump(self._error_counts, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"[审阅加群] 保存错误次数数据失败: {e}")
+    
+    def _get_today_date(self) -> str:
+        """获取今天的日期字符串 (YYYY-MM-DD)"""
+        return datetime.now().strftime("%Y-%m-%d")
+    
+    def _get_error_count(self, group_id: str, user_id: str) -> int:
+        """获取用户今日的错误次数"""
+        today = self._get_today_date()
+        return self._error_counts.get(str(group_id), {}).get(str(user_id), {}).get(today, 0)
+    
+    def _increment_error_count(self, group_id: str, user_id: str) -> int:
+        """增加用户今日的错误次数,返回增加后的次数"""
+        today = self._get_today_date()
+        group_id = str(group_id)
+        user_id = str(user_id)
+        
+        if group_id not in self._error_counts:
+            self._error_counts[group_id] = {}
+        if user_id not in self._error_counts[group_id]:
+            self._error_counts[group_id][user_id] = {}
+        
+        current = self._error_counts[group_id][user_id].get(today, 0)
+        self._error_counts[group_id][user_id][today] = current + 1
+        self._save_error_counts()
+        return current + 1
+    
+    def _is_over_max_attempts(self, group_id: str, user_id: str) -> bool:
+        """检查用户今日是否已超过最大错误次数"""
+        max_attempts = self.config.get("max_attempts", 3)
+        if max_attempts <= 0:
+            return False  # 0表示不限制
+        
+        current_count = self._get_error_count(group_id, user_id)
+        return current_count >= max_attempts
+    
+    async def _reset_scheduler(self) -> None:
+        """定时重置任务,每日指定时间重置所有用户的错误次数"""
+        while True:
+            try:
+                reset_hour = self.config.get("reset_hour", 4)
+                if reset_hour < 0:
+                    logger.info("[审阅加群] 重置时间设置为 -1,停止定时重置任务")
+                    break
+                
+                now = datetime.now()
+                today_reset_time = now.replace(hour=reset_hour, minute=0, second=0, microsecond=0)
+                
+                # 如果今天的重置时间已过,计算到明天的重置时间
+                if now >= today_reset_time:
+                    from datetime import timedelta
+                    tomorrow_reset_time = today_reset_time + timedelta(days=1)
+                    wait_seconds = (tomorrow_reset_time - now).total_seconds()
+                else:
+                    wait_seconds = (today_reset_time - now).total_seconds()
+                
+                logger.info(f"[审阅加群] 下次重置时间: {wait_seconds / 3600:.2f} 小时后")
+                await asyncio.sleep(wait_seconds)
+                
+                # 执行重置
+                today = self._get_today_date()
+                if today != self._last_reset_date:
+                    logger.info(f"[审阅加群] 开始重置错误次数计数器 (日期: {today})")
+                    # 清空所有旧日期的数据
+                    for group_id in list(self._error_counts.keys()):
+                        for user_id in list(self._error_counts[group_id].keys()):
+                            # 只保留今天的数据
+                            user_data = self._error_counts[group_id][user_id]
+                            self._error_counts[group_id][user_id] = {
+                                k: v for k, v in user_data.items() if k == today
+                            }
+                            # 如果用户没有今天的数据,删除该用户
+                            if not self._error_counts[group_id][user_id]:
+                                del self._error_counts[group_id][user_id]
+                        # 如果群组没有用户,删除该群组
+                        if not self._error_counts[group_id]:
+                            del self._error_counts[group_id]
+                    
+                    self._save_error_counts()
+                    self._last_reset_date = today
+                    logger.info("[审阅加群] 错误次数计数器重置完成")
+                
+            except asyncio.CancelledError:
+                logger.info("[审阅加群] 定时重置任务已取消")
+                break
+            except Exception as e:
+                logger.error(f"[审阅加群] 定时重置任务异常: {e}")
+                await asyncio.sleep(3600)  # 出错后等待1小时再试
 
     def _remember_request(self, group_id: str, user_id: str, flag: str, sub_type: str, comment: str) -> None:
         group_id = str(group_id)
@@ -139,20 +251,43 @@ class GitHubShaPlugin(Star):
 
         返回：
           {
-            'outcome': 'approved'|'rejected'|'no_flag'|'skipped_blacklist'|'error',
+            'outcome': 'approved'|'rejected'|'no_flag'|'skipped_blacklist'|'over_limit'|'error',
             'matched_prefix': str|None,
             'message': str  # 可用于输出的明细行（部分 outcome 可能为空）
+            'error_count': int  # 当前错误次数
           }
         """
 
         if user_id and self._is_blacklisted(group_id, user_id):
-            return {"outcome": "skipped_blacklist", "matched_prefix": None, "message": ""}
+            return {"outcome": "skipped_blacklist", "matched_prefix": None, "message": "", "error_count": 0}
+
+        # 先检查用户今日是否已超过错误上限 (不是刚好达到,而是已经超过)
+        if user_id and self._is_over_max_attempts(group_id, user_id):
+            # 已经超过上限,需要拒绝请求并设置拒绝理由
+            if flag:
+                try:
+                    await event.bot.set_group_add_request(
+                        flag=str(flag),
+                        sub_type=sub_type or "add",
+                        approve=False,
+                        reason="请明天再来答题哦"
+                    )
+                except Exception as e:
+                    logger.error(f"拒绝超限用户失败 user={user_id}, flag={flag}: {e}")
+            
+            return {
+                "outcome": "over_limit",
+                "matched_prefix": None,
+                "message": f"{user_id}: 今日错误次数已达上限,已静默拒绝",
+                "error_count": self._get_error_count(group_id, user_id)
+            }
 
         if not flag:
             return {
                 "outcome": "no_flag",
                 "matched_prefix": None,
                 "message": f"{user_id}: 申请缺少凭据，无法处理",
+                "error_count": 0
             }
 
         sha_candidates = self._extract_sha_candidates(comment)
@@ -184,23 +319,44 @@ class GitHubShaPlugin(Star):
                 approve=matched,
                 reason=reason_text,
             )
+            
             if matched:
                 return {
                     "outcome": "approved",
                     "matched_prefix": matched_prefix,
                     "message": f"{user_id}: 已批准 (匹配 {matched_prefix})",
+                    "error_count": 0
                 }
-            return {
-                "outcome": "rejected",
-                "matched_prefix": matched_prefix,
-                "message": f"{user_id}: 已拒绝 (未匹配)",
-            }
+            else:
+                # 回答错误,增加错误次数
+                if user_id:
+                    error_count = self._increment_error_count(group_id, user_id)
+                    max_attempts = self.config.get("max_attempts", 3)
+                    
+                    # 检查是否刚好达到上限(这是最后一次机会)
+                    if max_attempts > 0 and error_count == max_attempts:
+                        return {
+                            "outcome": "rejected_final",  # 新状态: 最后一次拒绝,需要发送特殊消息
+                            "matched_prefix": matched_prefix,
+                            "message": f"{user_id}: 已拒绝 (达到错误上限)",
+                            "error_count": error_count
+                        }
+                else:
+                    error_count = 0
+                
+                return {
+                    "outcome": "rejected",
+                    "matched_prefix": matched_prefix,
+                    "message": f"{user_id}: 已拒绝 (未匹配)",
+                    "error_count": error_count
+                }
         except Exception as e:
             logger.error(f"处理申请失败 user={user_id}, flag={flag}: {e}")
             return {
                 "outcome": "error",
                 "matched_prefix": matched_prefix,
                 "message": f"{user_id}: 处理失败",
+                "error_count": 0
             }
 
     @filter.regex(r"(?i)\bhash\b")
@@ -310,95 +466,7 @@ class GitHubShaPlugin(Star):
                 dedup.append(c)
         return dedup
 
-    @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
-    @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
-    @filter.command("审阅加群")
-    async def review_group_requests(self, event: AiocqhttpMessageEvent):
-        """审阅待处理的加群请求，依据申请信息中的 SHA 前缀自动批准或拒绝。"""
-        try:
-            group = await event.get_group()
-            if not group:
-                yield event.plain_result("仅支持在群聊中使用该指令")
-                return
-
-            self_id = str(event.get_self_id())
-            admin_ids = [str(x) for x in (group.group_admins or [])]
-            owner_id = str(group.group_owner) if group.group_owner else None
-            is_admin = self_id in admin_ids or (owner_id and self_id == owner_id)
-            logger.debug(
-                f"[审阅加群] group_id={group.group_id}, self_id={self_id}, owner_id={owner_id}, "
-                f"admin_ids_len={len(admin_ids)}, is_admin={is_admin}"
-            )
-            if not is_admin:
-                yield event.plain_result("我不是本群管理员，无法审阅加群申请")
-                return
-
-            try:
-                recent_shas = [s.lower() for s in await self._fetch_recent_commit_shas()]
-                logger.debug(
-                    f"[审阅加群] recent_shas_count={len(recent_shas)}, sample={[s[:10] for s in recent_shas[:5]]}"
-                )
-            except Exception as e:
-                logger.error(f"获取仓库提交列表失败: {e}")
-                yield event.plain_result("获取仓库提交列表失败，请稍后重试")
-                return
-
-            grp_id = str(event.get_group_id())
-            pending_map: Dict[str, Dict[str, Any]] = dict(self._pending_cache.get(grp_id, {}))
-            logger.debug(
-                f"[审阅加群] use cache only, pending_count={len(pending_map)} for group={grp_id}"
-            )
-
-            if not pending_map:
-                yield event.plain_result("没有待审的加群申请")
-                return
-
-            results: List[str] = []
-            approved = 0
-            rejected = 0
-            skipped_blacklist = 0
-
-            for user_id, info in pending_map.items():
-                flag = info.get("flag")
-                sub_type = (info.get("sub_type") or "add").strip()
-                comment = info.get("comment") or ""
-
-                outcome = await self._review_request_core(
-                    event=event,
-                    group_id=grp_id,
-                    user_id=str(user_id),
-                    flag=str(flag) if flag else None,
-                    sub_type=sub_type,
-                    comment=str(comment),
-                    recent_shas=recent_shas,
-                )
-
-                if outcome["outcome"] == "skipped_blacklist":
-                    skipped_blacklist += 1
-                    logger.debug(
-                        f"[审阅加群] skip user={user_id} by blacklist for group={grp_id}"
-                    )
-                    continue
-                if outcome["message"]:
-                    results.append(outcome["message"])
-                if outcome["outcome"] == "approved":
-                    approved += 1
-                elif outcome["outcome"] == "rejected":
-                    rejected += 1
-
-                if outcome["outcome"] in {"approved", "rejected"}:
-                    if grp_id in self._pending_cache and user_id in self._pending_cache[grp_id]:
-                        del self._pending_cache[grp_id][user_id]
-
-            try:
-                self._save_pending_cache()
-            except Exception:
-                pass
-
-            yield event.plain_result(self._format_summary(approved, rejected, skipped_blacklist, results))
-        except Exception as e:
-            logger.error(f"审阅加群执行异常: {e}")
-            yield event.plain_result("执行异常，请稍后再试")
+    # 已移除手动"审阅加群"命令，所有加群请求通过自动审阅处理
 
     @filter.platform_adapter_type(filter.PlatformAdapterType.AIOCQHTTP)
     @filter.event_message_type(filter.EventMessageType.ALL, priority=1)
@@ -425,6 +493,13 @@ class GitHubShaPlugin(Star):
 
                 if bool(self.config.get("auto_review_on_request", True)):
                     try:
+                        # 检查群聊白名单
+                        enabled_groups = self.config.get("enabled_groups", [])
+                        if enabled_groups and str(group_id) not in [str(g) for g in enabled_groups]:
+                            logger.debug(
+                                f"[审阅加群] auto-skip (not in enabled_groups) group_id={group_id}"
+                            )
+                            return
 
                         group = await event.get_group(group_id=str(group_id))
                         if not self._is_group_admin(event, group):
@@ -457,20 +532,42 @@ class GitHubShaPlugin(Star):
                             self._save_pending_cache()
 
                         try:
-                            if outcome["outcome"] in {"approved", "rejected"}:
-                                if outcome["outcome"] == "approved":
-                                    matched = outcome.get("matched_prefix") or ""
-                                    notice = (
-                                        f"审阅结果：已通过用户 {user_id} 的加群申请"
-                                        + (f"（匹配提交 {matched[:7]}）" if matched else "")
-                                        + "，欢迎加入！"
-                                    )
-                                else:
-                                    notice = (
-                                        f"审阅结果：已拒绝用户 {user_id} 的加群申请\n"
-                                        f"{(comment or '').strip() or '无'}"
-                                    )
-                                avatar_url = f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=100"
+                            avatar_url = f"https://q1.qlogo.cn/g?b=qq&nk={user_id}&s=100"
+                            
+                            if outcome["outcome"] == "over_limit":
+                                # 已经超过错误次数上限,静默拒绝,不发送任何消息
+                                logger.info(f"[审阅加群] 用户 {user_id} 已超过错误上限,静默拒绝")
+                            elif outcome["outcome"] == "rejected_final":
+                                # 最后一次错误(刚好达到上限),发送特殊提示消息
+                                error_count = outcome.get("error_count", 0)
+                                notice = f"[CQ:image,file={avatar_url}]\n用户 {user_id} 已经连续{error_count}次回答错误啦，这个笨蛋今天进不了这个群啦"
+                                await event.bot.send_group_msg(group_id=gid, message=notice)
+                                logger.info(f"[审阅加群] 用户 {user_id} 达到错误上限 ({error_count}次)")
+                            elif outcome["outcome"] == "approved":
+                                # 通过申请
+                                matched = outcome.get("matched_prefix") or ""
+                                notice = (
+                                    f"审阅结果：已通过用户 {user_id} 的加群申请"
+                                    + (f"（匹配提交 {matched[:7]}）" if matched else "")
+                                    + "，欢迎加入！"
+                                )
+                                message_with_avatar = f"[CQ:image,file={avatar_url}]\n{notice}"
+                                await event.bot.send_group_msg(group_id=gid, message=message_with_avatar)
+                            elif outcome["outcome"] == "rejected":
+                                # 拒绝申请,显示当前错误次数和剩余机会
+                                error_count = outcome.get("error_count", 0)
+                                max_attempts = self.config.get("max_attempts", 3)
+                                attempts_info = ""
+                                if max_attempts > 0:
+                                    remaining = max_attempts - error_count
+                                    if remaining > 0:
+                                        attempts_info = f"\n剩余尝试机会：{remaining}次"
+                                
+                                notice = (
+                                    f"审阅结果：已拒绝用户 {user_id} 的加群申请\n"
+                                    f"{(comment or '').strip() or '无'}"
+                                    f"{attempts_info}"
+                                )
                                 message_with_avatar = f"[CQ:image,file={avatar_url}]\n{notice}"
                                 await event.bot.send_group_msg(group_id=gid, message=message_with_avatar)
 
@@ -485,4 +582,11 @@ class GitHubShaPlugin(Star):
 
     async def terminate(self):
         """插件卸载时的清理工作"""
+        if self._reset_task and not self._reset_task.done():
+            self._reset_task.cancel()
+            try:
+                await self._reset_task
+            except asyncio.CancelledError:
+                pass
+            logger.info("[审阅加群] 已取消定时重置任务")
         logger.info("GitHub SHA 插件已卸载")
