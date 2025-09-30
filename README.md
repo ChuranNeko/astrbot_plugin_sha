@@ -55,8 +55,12 @@ git clone https://github.com/ChuranNeko/astrbot_plugin_sha /data/plugins
   - 默认：`5`
   - 范围：建议 1-10
 
+- **`enabled_groups`** (array)：启用自动审阅的群组 ID 列表（白名单）
+  - 默认：`[]`（空数组表示所有群组）
+  - 示例：`["123456789", "1145235245"]`
+
 ### 审阅加群配置
-- **`auto_review_on_request`** (bool)：是否自动审阅入群申请
+- **`auto_review_on_request`** (bool)：是否自动审阅入群申请(需要提前在webui配置好需要启用的群组)
   - 默认：`true`
   
 - **`enabled_groups`** (array)：启用自动审阅的群组 ID 列表（白名单）
