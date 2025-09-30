@@ -21,7 +21,7 @@ from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
 @register(
     "astrbot_plugin_sha",
     "ChuranNeko",
-    "获取GitHub仓库最后5次提交SHA的插件",
+    "基于原仓库 IGCrystal-NEO/astrbot_plugin_sha的 fork 版本",
     "1.4.1",
     "https://github.com/IGCrystal-NEO/astrbot_plugin_sha",
 )
@@ -493,13 +493,15 @@ class GitHubShaPlugin(Star):
 
                 if bool(self.config.get("auto_review_on_request", True)):
                     try:
-                        # 检查群聊白名单
-                        enabled_groups = self.config.get("enabled_groups", [])
-                        if enabled_groups and str(group_id) not in [str(g) for g in enabled_groups]:
-                            logger.debug(
-                                f"[审阅加群] auto-skip (not in enabled_groups) group_id={group_id}"
-                            )
-                            return
+                        # 检查群聊白名单(仅当白名单模式开启时)
+                        use_whitelist = self.config.get("use_group_whitelist", False)
+                        if use_whitelist:
+                            enabled_groups = self.config.get("enabled_groups", [])
+                            if not enabled_groups or str(group_id) not in [str(g) for g in enabled_groups]:
+                                logger.debug(
+                                    f"[审阅加群] auto-skip (whitelist enabled, group not in list) group_id={group_id}"
+                                )
+                                return
 
                         group = await event.get_group(group_id=str(group_id))
                         if not self._is_group_admin(event, group):

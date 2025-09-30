@@ -25,10 +25,17 @@
     "default": true,
     "obvious_hint": true
   },
+  "use_group_whitelist": {
+    "description": "启用群聊白名单模式",
+    "type": "bool",
+    "hint": "开启后,只审阅 enabled_groups 列表中的群聊。关闭后,审阅所有群聊的加群申请。",
+    "default": false,
+    "obvious_hint": true
+  },
   "enabled_groups": {
     "description": "启用自动审阅的群聊ID列表",
     "type": "list",
-    "hint": "需要启用自动审批的群号列表。留空则不处理任何群聊的加群申请。",
+    "hint": "群聊白名单。仅在 use_group_whitelist 开启时生效,只审阅此列表中的群号。",
     "default": [],
     "obvious_hint": true
   },
